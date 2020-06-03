@@ -4236,6 +4236,10 @@ a.hashret() == b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0
 l=fragment6(IPv6()/IPv6ExtHdrFragment()/TCP()/Raw(load="A"*40000), 1280) 
 len(l) == 33 and len(raw(l[-1])) == 644
 
+= fragment6 - test against a long TCP packet with a 1280 MTU without fragment header
+l=fragment6(IPv6()/TCP()/Raw(load="A"*40000), 1280)
+len(l) == 33 and len(raw(l[-1])) == 644
+
 
 ############
 ############
