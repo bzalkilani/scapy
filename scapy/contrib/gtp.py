@@ -383,9 +383,10 @@ class GTPPDUSessionContainer(Packet):
                    ByteEnumField("NextExtHdr", 0, ExtensionHeadersTypes),
                    ConditionalField(StrLenField(
                        "extraPadding",
-                       "", length_from=lambda pkt: pkt.ExtHdrLen * 4 - get_hdr_len(pkt),
-                       max_length=12),
-                       lambda pkt: pkt.ExtHdrLen is not None), ]
+                       "",
+                       length_from=lambda pkt: 4 * (pkt.ExtHdrLen) - 5),
+                       lambda pkt:pkt.ExtHdrLen and pkt.ExtHdrLen > 1 and
+                       pkt.type == 0 and pkt.P == 1 and pkt.NextExtHdr == 0)]
 
     def guess_payload_class(self, payload):
         if self.NextExtHdr == 0:
