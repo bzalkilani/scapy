@@ -403,7 +403,7 @@ class GTPPDUSessionContainer(Packet):
         ext_hdr_len = self.ExtHdrLen
         hdr_len = get_hdr_len(self)
         if ext_hdr_len is None:
-            ext_hdr_len = math.ceil(hdr_len(self) / 4.0)
+            ext_hdr_len = math.ceil(hdr_len / 4.0)
             p = struct.pack("!B", ext_hdr_len) + p[1:]
 
         if not self.extraPadding and hdr_len * 4 != len(p) - len(pay):
