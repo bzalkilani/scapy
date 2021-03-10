@@ -312,7 +312,7 @@ GTPforcedTypes = {
 }
 
 
-def get_padding_len(pkt):
+def get_hdr_len(pkt):
     """
     helper function to return the GTPPDUSessionContainer padding length
     """
@@ -320,9 +320,9 @@ def get_padding_len(pkt):
     for field in pkt.fields_desc[:-1]:
         if isinstance(field, ConditionalField) and not field.cond(pkt):
             continue
-        length += field.sz
+        length += field.i2len(None, None)
 
-    return pkt.ExtHdrLen * 4 - int(length)
+    return int(length)
 
 
 class GTPPDUSessionContainer(Packet):
@@ -383,7 +383,7 @@ class GTPPDUSessionContainer(Packet):
                    ByteEnumField("NextExtHdr", 0, ExtensionHeadersTypes),
                    ConditionalField(StrLenField(
                        "extraPadding",
-                       "", length_from=get_padding_len,
+                       "", length_from=lambda pkt: pkt.ExtHdrLen * 4 - get_hdr_len(pkt),
                        max_length=12),
                        lambda pkt: pkt.ExtHdrLen is not None), ]
 
@@ -400,13 +400,14 @@ class GTPPDUSessionContainer(Packet):
 
     def post_build(self, p, pay):
         p += pay
-        hdr_len = self.ExtHdrLen
-        if hdr_len is None:
-            hdr_len = math.ceil((len(p) - len(pay)) / 4.0)
-            p = struct.pack("!B", hdr_len) + p[1:]
+        ext_hdr_len = self.ExtHdrLen
+        hdr_len = get_hdr_len(self)
+        if ext_hdr_len is None:
+            ext_hdr_len = math.ceil(hdr_len(self) / 4.0)
+            p = struct.pack("!B", ext_hdr_len) + p[1:]
 
         if not self.extraPadding and hdr_len * 4 != len(p) - len(pay):
-            p += bytes(b'0' * int((hdr_len * 4 - len(p) - len(pay))))
+            p += bytes(b'0' * int((ext_hdr_len * 4 - hdr_len)))
 
         return p
 
