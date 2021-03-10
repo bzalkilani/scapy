@@ -9,9 +9,16 @@
 # scapy.contrib.description = GPRS Tunneling Protocol (GTP)
 # scapy.contrib.status = loads
 
+"""
+GPRS Tunneling Protocol (GTP)
+
+Spec: 3GPP TS 29.060 and 3GPP TS 29.274
+Some IEs: 3GPP TS 24.008
+"""
+
 from __future__ import absolute_import
 import struct
-
+import math
 
 from scapy.compat import chb, orb, bytes_encode
 from scapy.config import conf
@@ -305,30 +312,80 @@ GTPforcedTypes = {
 }
 
 
+def get_padding_len(pkt):
+    """
+    helper function to return the GTPPDUSessionContainer padding length
+    """
+    length = 0
+    for field in pkt.fields_desc[:-1]:
+        if isinstance(field, ConditionalField) and not field.cond(pkt):
+            continue
+        length += field.sz
+
+    return pkt.ExtHdrLen * 4 - int(length)
+
+
 class GTPPDUSessionContainer(Packet):
     name = "GTP PDU Session Container"
     fields_desc = [ByteField("ExtHdrLen", None),
                    BitField("type", 0, 4),
-                   BitField("spare1", 0, 4),
-                   BitField("P", 0, 1),
-                   BitField("R", 0, 1),
+                   BitField("qmp", 0, 1),
+                   ConditionalField(BitField("dlDelayInd", 0, 1),
+                                    lambda pkt: pkt.type == 1),
+                   ConditionalField(BitField("ulDelayInd", 0, 1),
+                                    lambda pkt: pkt.type == 1),
+                   ConditionalField(BitField("spareUl1", 0, 1),
+                                    lambda pkt: pkt.type == 1),
+                   ConditionalField(BitField("SNP", 0, 1),
+                                    lambda pkt: pkt.type == 0),
+                   ConditionalField(XBitField("spareDl1", 0, 2),
+                                    lambda pkt: pkt.type == 0),
+                   ConditionalField(BitField("P", 0, 1),
+                                    lambda pkt: pkt.type == 0),
+                   ConditionalField(BitField("R", 0, 1),
+                                    lambda pkt: pkt.type == 0),
+                   ConditionalField(XBitField("spareUl2", 0, 2),
+                                    lambda pkt: pkt.type == 1),
                    BitField("QFI", 0, 6),
                    ConditionalField(XBitField("PPI", 0, 3),
-                                    lambda pkt: pkt.P == 1),
-                   ConditionalField(XBitField("spare2", 0, 5),
-                                    lambda pkt: pkt.P == 1),
-                   ConditionalField(ByteField("pad1", 0),
-                                    lambda pkt: pkt.P == 1),
-                   ConditionalField(ByteField("pad2", 0),
-                                    lambda pkt: pkt.P == 1),
-                   ConditionalField(ByteField("pad3", 0),
-                                    lambda pkt: pkt.P == 1),
+                                    lambda pkt: pkt.type == 0 and
+                                    pkt.P == 1),
+                   ConditionalField(XBitField("spareDl2", 0, 5),
+                                    lambda pkt: pkt.type == 0 and
+                                    pkt.P == 1),
+                   ConditionalField(XBitField("dlSendTime", 0, 64),
+                                    lambda pkt: pkt.type == 0 and
+                                    pkt.qmp == 1),
+                   ConditionalField(XBitField("dlQFISeqNum", 0, 24),
+                                    lambda pkt: pkt.type == 0 and
+                                    pkt.SNP == 1),
+                   ConditionalField(XBitField("dlSendTimeRpt", 0, 64),
+                                    lambda pkt: pkt.type == 1 and
+                                    pkt.qmp == 1),
+                   ConditionalField(XBitField("dlRecvTime", 0, 64),
+                                    lambda pkt: pkt.type == 1 and
+                                    pkt.qmp == 1),
+                   ConditionalField(XBitField("ulSendTime", 0, 64),
+                                    lambda pkt: pkt.type == 1 and
+                                    pkt.qmp == 1),
+                   ConditionalField(XBitField("dlDelayRslt", 0, 32),
+                                    lambda pkt: pkt.type == 1 and
+                                    pkt.dlDelayInd == 1),
+                   ConditionalField(XBitField("ulDelayRslt", 0, 32),
+                                    lambda pkt: pkt.type == 1 and
+                                    pkt.ulDelayInd == 1),
+                   ConditionalField(XBitField("UlQFISeqNum", 0, 24),
+                                    lambda pkt: pkt.type == 1 and
+                                    pkt.spareUl1 == 1),
+                   ConditionalField(XBitField("N3N9DelayRslt", 0, 32),
+                                    lambda pkt: pkt.type == 1 and
+                                    (pkt.spareUl2 >> 1) == 1),
+                   ByteEnumField("NextExtHdr", 0, ExtensionHeadersTypes),
                    ConditionalField(StrLenField(
                        "extraPadding",
-                       "",
-                       length_from=lambda pkt: 4 * (pkt.ExtHdrLen) - 4),
-                       lambda pkt: pkt.ExtHdrLen and pkt.ExtHdrLen > 1),
-                   ByteEnumField("NextExtHdr", 0, ExtensionHeadersTypes), ]
+                       "", length_from=get_padding_len,
+                       max_length=12),
+                       lambda pkt: pkt.ExtHdrLen is not None), ]
 
     def guess_payload_class(self, payload):
         if self.NextExtHdr == 0:
@@ -343,12 +400,14 @@ class GTPPDUSessionContainer(Packet):
 
     def post_build(self, p, pay):
         p += pay
-        if self.ExtHdrLen is None:
-            if self.P == 1:
-                hdr_len = 2
-            else:
-                hdr_len = 1
+        hdr_len = self.ExtHdrLen
+        if hdr_len is None:
+            hdr_len = math.ceil((len(p) - len(pay)) / 4.0)
             p = struct.pack("!B", hdr_len) + p[1:]
+
+        if not self.extraPadding and hdr_len * 4 != len(p) - len(pay):
+            p += bytes(b'0' * int((hdr_len * 4 - len(p) - len(pay))))
+
         return p
 
 
@@ -572,15 +631,16 @@ class IE_MSInternationalNumber(IE_Base):
 
 class QoS_Profile(IE_Base):
     name = "QoS profile"
+    # 3GPP TS 24.008 10.5.6.5
     fields_desc = [ByteField("qos_ei", 0),
                    ByteField("length", None),
-                   XBitField("spare", 0x00, 2),
+                   XBitField("spare1", 0x00, 2),
                    XBitField("delay_class", 0x000, 3),
                    XBitField("reliability_class", 0x000, 3),
                    XBitField("peak_troughput", 0x0000, 4),
-                   BitField("spare", 0, 1),
+                   BitField("spare2", 0, 1),
                    XBitField("precedence_class", 0x000, 3),
-                   XBitField("spare", 0x000, 3),
+                   XBitField("spare3", 0x000, 3),
                    XBitField("mean_troughput", 0x00000, 5),
                    XBitField("traffic_class", 0x000, 3),
                    XBitField("delivery_order", 0x00, 2),
@@ -601,8 +661,8 @@ class IE_QoS(IE_Base):
     fields_desc = [ByteEnumField("ietype", 135, IEType),
                    ShortField("length", None),
                    ByteField("allocation_retention_prioiry", 1),
-
-                   ConditionalField(XBitField("spare", 0x00, 2),
+                   # 3GPP TS 24.008 10.5.6.5
+                   ConditionalField(XBitField("spare1", 0x00, 2),
                                     lambda p: p.length and p.length > 1),
                    ConditionalField(XBitField("delay_class", 0x000, 3),
                                     lambda p: p.length and p.length > 1),
@@ -611,12 +671,12 @@ class IE_QoS(IE_Base):
 
                    ConditionalField(XBitField("peak_troughput", 0x0000, 4),
                                     lambda p: p.length and p.length > 2),
-                   ConditionalField(BitField("spare", 0, 1),
+                   ConditionalField(BitField("spare2", 0, 1),
                                     lambda p: p.length and p.length > 2),
                    ConditionalField(XBitField("precedence_class", 0x000, 3),
                                     lambda p: p.length and p.length > 2),
 
-                   ConditionalField(XBitField("spare", 0x000, 3),
+                   ConditionalField(XBitField("spare3", 0x000, 3),
                                     lambda p: p.length and p.length > 3),
                    ConditionalField(XBitField("mean_troughput", 0x00000, 5),
                                     lambda p: p.length and p.length > 3),
@@ -652,7 +712,7 @@ class IE_QoS(IE_Base):
                                               None),
                                     lambda p: p.length and p.length > 11),
 
-                   ConditionalField(XBitField("spare", 0x000, 3),
+                   ConditionalField(XBitField("spare4", 0x000, 3),
                                     lambda p: p.length and p.length > 12),
                    ConditionalField(BitField("signaling_indication", 0, 1),
                                     lambda p: p.length and p.length > 12),
@@ -727,12 +787,7 @@ class IE_MSTimeZone(IE_Base):
     fields_desc = [ByteEnumField("ietype", 153, IEType),
                    ShortField("length", None),
                    ByteField("timezone", 0),
-                   BitField("Spare", 0, 1),
-                   BitField("Spare", 0, 1),
-                   BitField("Spare", 0, 1),
-                   BitField("Spare", 0, 1),
-                   BitField("Spare", 0, 1),
-                   BitField("Spare", 0, 1),
+                   BitField("spare", 0, 6),
                    XBitField("daylight_saving_time", 0x00, 2)]
 
 
@@ -752,13 +807,10 @@ class IE_MSInfoChangeReportingAction(IE_Base):
 
 class IE_DirectTunnelFlags(IE_Base):
     name = "Direct Tunnel Flags"
+    # 29.060 7.7.81
     fields_desc = [ByteEnumField("ietype", 182, IEType),
                    ShortField("length", 1),
-                   BitField("Spare", 0, 1),
-                   BitField("Spare", 0, 1),
-                   BitField("Spare", 0, 1),
-                   BitField("Spare", 0, 1),
-                   BitField("Spare", 0, 1),
+                   BitField("spare", 0, 5),
                    BitField("EI", 0, 1),
                    BitField("GCSI", 0, 1),
                    BitField("DTI", 0, 1)]
@@ -773,12 +825,13 @@ class IE_BearerControlMode(IE_Base):
 
 class IE_EvolvedAllocationRetentionPriority(IE_Base):
     name = "Evolved Allocation/Retention Priority"
+    # 29.060 7.7.91
     fields_desc = [ByteEnumField("ietype", 191, IEType),
                    ShortField("length", 1),
-                   BitField("Spare", 0, 1),
+                   BitField("spare1", 0, 1),
                    BitField("PCI", 0, 1),
                    XBitField("PL", 0x0000, 4),
-                   BitField("Spare", 0, 1),
+                   BitField("spare2", 0, 1),
                    BitField("PVI", 0, 1)]
 
 
