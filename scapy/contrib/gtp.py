@@ -288,7 +288,7 @@ class GTP_U_Header(GTPHeader):
 
         if self.gtp_type == 255:
             sub_proto = orb(payload[0])
-            if sub_proto >= 0x45 and sub_proto <= 0x4e:
+            if sub_proto >= 0x45 and sub_proto <= 0x4f:
                 return IP
             elif (sub_proto & 0xf0) == 0x60:
                 return IPv6
