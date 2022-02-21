@@ -32,6 +32,7 @@
 
 import json
 import enum
+import binascii
 from scapy.data import IP_PROTOS
 from scapy.layers.l2 import Ether
 from scapy.layers.inet import IP, UDP
@@ -170,4 +171,7 @@ def nisp_key_import(filename:str) -> 'dict':
     }
     """
     f = open(filename)
-    return json.load(f)
+    dict = json.load(f)
+    dict['key'] = binascii.unhexlify(dict['key'])
+    return dict
+
