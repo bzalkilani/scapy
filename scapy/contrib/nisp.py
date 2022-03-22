@@ -100,8 +100,13 @@ class NISP(Packet):
         return p + pay
 
 bind_layers(UDP, NISP,  dport=NISP.NISP_DPORT)
-bind_layers(NISP, IP,   next=IP_PROTOS.ipencap)
 bind_layers(NISP, IPv6, next=IP_PROTOS.ipv6)
+# IPIP protocol naming in /etc/protocols file
+# differs between Linux distributions
+if hasattr(IP_PROTOS, 'ipencap'):
+    bind_layers(NISP, IP,   next=IP_PROTOS.ipencap)
+elif hasattr(IP_PROTOS, 'ipv4'):
+    bind_layers(NISP, IP,   next=IP_PROTOS.ipv4)
 
 def nisp_crypt(nisp: NISP, key: bytes, crypt_op: NISPCryptOp) -> NISP:
     """Encrypt NISP packet
@@ -115,10 +120,10 @@ def nisp_crypt(nisp: NISP, key: bytes, crypt_op: NISPCryptOp) -> NISP:
     copy = nisp.copy()
     if len(key) == NISPKeyLen.NISPKey128:
         copy.version = NISPHeaderVersion.AES_GCM_128
-    if len(key) == NISPKeyLen.NISPKey256:
+    elif len(key) == NISPKeyLen.NISPKey256:
         copy.version = NISPHeaderVersion.AES_GCM_256
     else:
-        raise NISPError('NISP protocol error: invalid key length')
+        raise NISPError('NISP protocol error: invalid key length:' + str(len(key)))
     blob = raw(copy)
     # NISP.IV offset is 16 bytes
     encrypt_offset = 16 + 4 * nisp.crypt_offset
@@ -173,5 +178,6 @@ def nisp_key_import(filename:str) -> 'dict':
     f = open(filename)
     dict = json.load(f)
     dict['key'] = binascii.unhexlify(dict['key'])
+    f.close()
     return dict
 
