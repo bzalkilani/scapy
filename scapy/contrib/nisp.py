@@ -38,7 +38,7 @@ from scapy.layers.l2 import Ether
 from scapy.layers.inet import IP, UDP
 from scapy.layers.inet6 import IPv6
 from scapy.compat import raw
-from scapy.packet import Packet, bind_layers
+from scapy.packet import Packet, bind_layers, Raw
 from scapy.fields import (
     BitField, BitEnumField,
     XIntField, XLongField,
@@ -152,15 +152,21 @@ def nisp_encap(outer: Ether,
     inner = nisp / packet[l3]
     if not key is None:
         inner = nisp_crypt(inner, key, NISPCryptOp.NISP_ENCRYPT)
+    else:
+        inner = inner / Raw('\x00' * 16)
     return outer.copy() / UDP(sport=12345)/ inner
 
 def nisp_decap(tunnel: Ether, l2: Ether, key = None) -> Ether:
     """Remove NISP tunnel, add L2 layer
     """
     inner = tunnel[NISP]
+    if hasattr(IP_PROTOS, 'ipencap'):
+        inner_ip4=IP_PROTOS.ipencap
+    elif hasattr(IP_PROTOS, 'ipv4'):
+        inner_ip4=IP_PROTOS.ipv4
     if not key is None:
         inner = nisp_crypt(inner, key, NISPCryptOp.NISP_DECRYPT)
-    l3 = inner[IP] if inner[NISP].next == IP_PROTOS.ipencap \
+    l3 = inner[IP] if inner[NISP].next == inner_ip4 \
         else inner[IPv6]
     return l2.copy() / l3
 
