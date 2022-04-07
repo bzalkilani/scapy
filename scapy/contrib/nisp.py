@@ -85,7 +85,7 @@ class NISP(Packet):
                    XIntField("spi", 0),
                    XLongField("iv", 0),
                    ConditionalField(XLongField("vc", 0),
-                                    lambda pkt: pkt.ext_len >= 24 and
+                                    lambda pkt: pkt.ext_len >= 1 and
                                                 pkt.v == 1)
                    ]
 
