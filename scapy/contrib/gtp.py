@@ -390,7 +390,7 @@ class GTPPDUSessionContainer(Packet):
     def guess_payload_class(self, payload):
         if self.NextExtHdr == 0:
             sub_proto = orb(payload[0])
-            if sub_proto >= 0x45 and sub_proto <= 0x4e:
+            if sub_proto >= 0x45 and sub_proto <= 0x4f:
                 return IP
             elif (sub_proto & 0xf0) == 0x60:
                 return IPv6
