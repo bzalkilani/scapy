@@ -85,8 +85,13 @@ class NISP(Packet):
                    XIntField("spi", 0),
                    XLongField("iv", 0),
                    ConditionalField(XLongField("vc", 0),
-                                    lambda pkt: pkt.ext_len >= 1 and
-                                                pkt.v == 1)
+                                    lambda pkt: ((pkt.ext_len == 2 and
+                                                  pkt.v == 1)) or
+                                                 pkt.ext_len > 2),
+                   ConditionalField(XLongField("src_ep", 0),
+                                    lambda pkt: pkt.ext_len >= 3),
+                   ConditionalField(XLongField("dst_ep", 0),
+                                    lambda pkt: pkt.ext_len == 4)
                    ]
 
     def mysummary(self):
@@ -152,8 +157,6 @@ def nisp_encap(outer: Ether,
     inner = nisp / packet[l3]
     if not key is None:
         inner = nisp_crypt(inner, key, NISPCryptOp.NISP_ENCRYPT)
-    else:
-        inner = inner / Raw('\x00' * 16)
     return outer.copy() / UDP(sport=12345)/ inner
 
 def nisp_decap(tunnel: Ether, l2: Ether, key = None) -> Ether:
